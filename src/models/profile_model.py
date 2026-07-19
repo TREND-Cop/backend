@@ -6,7 +6,7 @@ async def create_profile(blob):
 
 async def get_profile(user_id):
     res = supabase.table('user_profiles').select("*").eq("user_id", user_id).execute()
-    return res.blob
+    return res
 
 async def edit_profile(blob, user_id):
     res = supabase.table('user_profiles').update({"name": blob.get('name'), 
