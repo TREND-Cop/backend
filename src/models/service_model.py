@@ -6,7 +6,7 @@ async def create_service(blob):
 
 async def fetch_all_business_services(business_id):
     res = supabase.table('business_services').select("*").eq("business_id", business_id).execute()
-    return res.blob
+    return res
 
 async def edit_services(blob, user_id, service_id):
     res = supabase.table('business_services').update({"price": blob.get('price'), 
