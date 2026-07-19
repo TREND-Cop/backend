@@ -11,7 +11,7 @@ async def delete_image(user_id, id):
 
 
 async def get_profile_image_url(user_id):
-   res = supabase.table('user_metadata').select("url").eq("user_id", user_id).execute()
+   res = supabase.table('user_metadata').select("url").eq("user_id", user_id).eq("description", "profile").execute()
     return {"image_url": res, "success": True}
 
 
