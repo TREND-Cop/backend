@@ -15,14 +15,15 @@ async def get_one_business(business_id):
     return res
 
 
-async def delete_business(business_id):
-    res = supabase.table('user_businesses').delete().eq("business_id", business_id).execute()
+async def delete_business(business_id, user_id):
+    res = supabase.table('user_businesses').delete().eq("business_id", business_id).eq("user_id", user_id).execute()
     return {"success": True}
 
 
-async def edit_business(business_id, blob):
-    res = supabase.table('user_businesses').update({"business_name": blob.get('name'), "business_location": blob.get('location'), "opening_hour": blob.get('opening_hour'), "closing_hour": blob.get('closing_hour')}).eq("business_id", business_id).execute()
-    return {"success": True}
+async def edit_business(business_id, blob, user_id):
+    res = supabase.table('user_businesses').update({"business_name": blob.get('name'), "business_location": blob.get('location'), "opening_hour": blob.get('opening_hour'), "closing_hour": blob.get('closing_hour')}).eq("business_id", business_id).eq("user_id", user_id).select().execute()
+    return {"updated_business": res, "success": True}
+
 
 
 
