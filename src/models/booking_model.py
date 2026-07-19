@@ -5,8 +5,8 @@ async def book_service(blob):
     return {"success": True}
 
 
-async def delete_booked_service(id):
-    res = supabase('business_bookings').delete().eq("id", id).execute()
+async def delete_booked_service(id, user_id):
+    res = supabase('business_bookings').delete().eq("id", id).eq("customer_id", user_id).execute()
     return {"success": True}
 
 
