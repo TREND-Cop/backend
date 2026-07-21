@@ -25,5 +25,12 @@ async def edit_business(business_id, blob, user_id):
     return {"updated_business": res, "success": True}
 
 
+async def edit_business_stars(business_id, stars):
+    res = supabase.table('user_businesses').update({"stars": stars}).eq("business_id", business_id).select().execute()
+    return {"updated_business": res, "success": True}
+
+
+
+
 
 
