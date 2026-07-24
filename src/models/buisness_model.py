@@ -1,16 +1,37 @@
-from utils.db import supabase
+from utils.db import supabase 
 
 async def create_business(blob):
-    res = supabase.tables(user_businesses).insert(blob).execute()
+    res = supabase.table('user_buisnesses').insert(blob).execute()
     return res.blob
 
-async def edit_services(blob, user_id, business_id):
-    res = supabase.table(user_businesses).update({}).eq("user_id", user_id).eq("business_id", business_id).execute()
-    return res.blob
 
-async def delete_service(business_id):
-    res = supabase.tables(user_businesses).delete().eq("business_id", business_id_id).execute()
+async def get_all_user_businesses(user_id):
+    res = supabase.table('user_businesses').select("*").eq("user_id", user_id).execute()
+    return res
+
+
+async def get_one_business(business_id):
+    res = supabase.table('user_businesses').select("*").eq("business_id", business_id).execute()
+    return res
+
+
+async def delete_business(business_id, user_id):
+    res = supabase.table('user_businesses').delete().eq("business_id", business_id).eq("user_id", user_id).execute()
     return {"success": True}
 
-async def fetch_all_businesses(user_id):
-    res = supabase.table(user_businesses).select
+
+async def edit_business(business_id, blob, user_id):
+    res = supabase.table('user_businesses').update({"business_name": blob.get('name'), "business_location": blob.get('location'), "opening_hour": blob.get('opening_hour'), "closing_hour": blob.get('closing_hour')}).eq("business_id", business_id).eq("user_id", user_id).select().execute()
+    return {"updated_business": res, "success": True}
+
+
+async def edit_business_stars(business_id, stars):
+    res = supabase.table('user_businesses').update({"stars": stars}).eq("business_id", business_id).select().execute()
+    return {"updated_business": res, "success": True}
+
+
+
+
+
+
+>>>>>>> 18bb5bf1622ceacc2ec2abc621fb7ff377e9eb81
