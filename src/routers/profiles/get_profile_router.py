@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Requests, Header, HTTPException
 from middleware.auth.verify_token import verify_token
 from middleware.auth.rate_limit import rate_limit
-from controllers.profile.edit_profile_controller import verify_edits
+from controllers.profile.get_profile_controller import get_profile_by_id
 
 
 router1 = APIRouter(prefix = '/api/customer', tags=['customer'])
-@router1.put('/profile/edit')
-async def edit_router(request:Requests, token: Header(None)):
+@router1.get('/profile/get/{user_id}')
+async def edit_router(user_id: str(user_id), token: Header(None)):
     if not token:
         raise HTTPException (
             status_code=400,
@@ -24,14 +24,13 @@ async def edit_router(request:Requests, token: Header(None)):
             status_code=429,
             detail="Too many request"
         )
-    blob = request.body()
-    res = await verify_edits(blob, user_id, type="customer", business_id="null")
+    res = await get_profile_by_id(id=user_id, type="business")
     return res
 
 
 router2 = APIRouter(prefix = '/api/business', tags=['business'])
-@router2.put('/profile/edit/{business_id}')
-async def edit_business(request:Requests, business_id: str(business_id), token:Header(None)):
+@router2.put('/profile/get/{business_id}')
+async def edit_business(business_id: str(business_id), token:Header(None)):
     if not token:
         raise HTTPException(
             status_code=400,
@@ -49,8 +48,7 @@ async def edit_business(request:Requests, business_id: str(business_id), token:H
             status_code=429,
             detail="Too many request"
         )
-    blob = request.body()
-    res = await verify_edits(blob, user_id, type="business", business_id=business_id)
+    res = await get_profile_by_id(id=business_id, type="business")
     return res
 
     
