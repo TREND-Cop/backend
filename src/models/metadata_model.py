@@ -20,7 +20,7 @@ async def get_business_image_url(business_id, limit):
     return {"image_url": [res], "success": True}
 
 
-async def edit_business(id, user_id, new_url):
+async def edit_image(id, user_id, new_url):
     # he passes in the old_url in the controller
     res = supabase.table('user_metadata).update({"url": new_url}).eq("id", id).eq("user_id", user_id).select().execute()
     return {"updated_image": new_url, "success": True}
