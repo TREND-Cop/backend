@@ -1,0 +1,24 @@
+name = "trend-api"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "trend-db"
+database_id = "REPLACE_WITH_ID_FROM_wrangler_d1_create"
+
+[[r2_buckets]]
+binding = "UPLOADS"
+bucket_name = "trend-uploads"
+
+[vars]
+ENVIRONMENT = "dev"            # "dev" returns OTP codes in responses. Set to "prod" when live.
+COMMISSION_PCT = "10"
+TERMII_SENDER_ID = "Trend"
+BREVO_SENDER = "no-reply@yourdomain.com"
+BANK_DETAILS = '{"bank_name":"Your Bank","account_number":"0000000000","account_name":"Trend Ltd"}'
+
+# Secrets (never put in this file):
+#   wrangler secret put JWT_SECRET
+#   wrangler secret put TERMII_API_KEY
+#   wrangler secret put BREVO_API_KEY
