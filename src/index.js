@@ -27,6 +27,19 @@ async function verifyJWT(env, t) {
   const d = JSON.parse(new TextDecoder().decode(unb64u(p)));
   return d.exp > Date.now() / 1000 ? d : null;
 }
+async function verifyFirebase(env, token) {
+  const [h, p, s] = (token || "").split(".");
+  if (!s) bad("Invalid Google token", 401);
+  const head = JSON.parse(new TextDecoder().decode(unb64u(h)));
+  const jwks = await (await fetch("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com", { cf: { cacheTtl: 3600, cacheEverything: true } })).json();
+  const jwk = jwks.keys.find((k) => k.kid === head.kid);
+  if (!jwk || head.alg !== "RS256") bad("Invalid Google token", 401);
+  const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
+  if (!(await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, unb64u(s), enc.encode(h + "." + p)))) bad("Invalid Google token", 401);
+  const d = JSON.parse(new TextDecoder().decode(unb64u(p))), pid = env.FIREBASE_PROJECT_ID;
+  if (!pid || d.aud !== pid || d.iss !== "https://securetoken.google.com/" + pid || d.exp < Date.now() / 1000 || !d.sub) bad("Invalid Google token", 401);
+  return d;
+}
 async function hashPw(pw, salt) {
   const k = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveBits"]);
   return b64u(await crypto.subtle.deriveBits({ name: "PBKDF2", salt: enc.encode(salt), iterations: 100000, hash: "SHA-256" }, k, 256));
@@ -138,6 +151,18 @@ r("POST", "/api/auth/login", "-", "Log in with email or phone and password. Retu
   const u = await c.one("SELECT * FROM users WHERE email=? OR phone=?", c.body.identifier, c.body.identifier);
   if (!u || u.password_hash !== (await hashPw(c.body.password, u.salt))) bad("Wrong credentials", 401);
   return { token: await signJWT(c.env, { sub: u.id, role: u.role }), user: { id: u.id, role: u.role, name: u.name, verified: !!u.verified } };
+});
+r("POST", "/api/auth/google", "-", "Sign in or sign up with Google. Send the Firebase ID token from the frontend.", { id_token: "FIREBASE_ID_TOKEN", role: "client" }, async (c) => {
+  need(c.body, "id_token");
+  const g = await verifyFirebase(c.env, c.body.id_token);
+  if (!g.email || !g.email_verified) bad("Google account email is not verified", 401);
+  let u = await c.one("SELECT * FROM users WHERE email=?", g.email), created = false;
+  if (!u) {
+    const role = c.body.role === "business" ? "business" : "client", id = uid();
+    await c.run("INSERT INTO users(id,role,name,email,image,verified) VALUES(?,?,?,?,?,1)", id, role, g.name || g.email.split("@")[0], g.email, g.picture || null);
+    u = { id, role, name: g.name }; created = true;
+  }
+  return [{ token: await signJWT(c.env, { sub: u.id, role: u.role }), user: { id: u.id, role: u.role, name: u.name }, created }, created ? 201 : 200];
 });
 r("POST", "/api/auth/otp/send", "-", "Send a verification OTP by SMS (Termii) or email (Brevo)", { target: "+2348012345678" }, async (c) => { need(c.body, "target"); return { sent: true, ...(await otp(c, c.body.target, "verify")) }; });
 r("POST", "/api/auth/otp/verify", "-", "Verify an OTP and mark the account as verified", { target: "+2348012345678", code: "123456" }, async (c) => {
