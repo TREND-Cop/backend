@@ -15,7 +15,7 @@ bucket_name = "trend-uploads"
 ENVIRONMENT = "dev"            # "dev" returns OTP codes in responses. Set to "prod" when live.
 COMMISSION_PCT = "10"
 TERMII_SENDER_ID = "Trend"
-BREVO_SENDER = "no-reply@yourdomain.com"
+BREVO_SENDER = "no-reply@trend.org.ng"
 BANK_DETAILS = '{"bank_name":"Your Bank","account_number":"0000000000","account_name":"Trend Ltd"}'
 
 # Secrets (never put in this file):
