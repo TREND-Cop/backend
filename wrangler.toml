@@ -7,9 +7,7 @@ binding = "DB"
 database_name = "trend-db"
 database_id = "6e5c1395-713a-4cc2-8c01-83d9d913be43"
 
-[[r2_buckets]]
-binding = "UPLOADS"
-bucket_name = "trend-uploads"
+
 
 [vars]
 ENVIRONMENT = "dev"            # "dev" returns OTP codes in responses. Set to "prod" when live.
@@ -18,6 +16,8 @@ TERMII_SENDER_ID = "Trend"
 BREVO_SENDER = "no-reply@trend.org.ng"
 BANK_DETAILS = '{"bank_name":"Your Bank","account_number":"0000000000","account_name":"Trend Ltd"}'
 FIREBASE_PROJECT_ID = "your-firebase-project-id"
+CLOUDINARY_CLOUD_NAME = "ekzfyvi0"
+CLOUDINARY_API_KEY = "265991349975294"
 
 # Secrets (never put in this file):
 #   wrangler secret put JWT_SECRET
