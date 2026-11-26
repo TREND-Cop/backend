@@ -1,0 +1,17 @@
+CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, role TEXT NOT NULL, name TEXT, email TEXT UNIQUE, phone TEXT UNIQUE, password_hash TEXT, salt TEXT, image TEXT, verified INTEGER DEFAULT 0, settings TEXT DEFAULT '{"sms":true,"email":true}', created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS otps(id TEXT PRIMARY KEY, target TEXT, purpose TEXT, code TEXT, expires INTEGER, used INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS categories(id TEXT PRIMARY KEY, name TEXT UNIQUE);
+CREATE TABLE IF NOT EXISTS businesses(id TEXT PRIMARY KEY, owner_id TEXT UNIQUE, name TEXT, description TEXT, category TEXT, address TEXT, city TEXT, lat REAL, lng REAL, phone TEXT, logo TEXT, hours TEXT DEFAULT '{}', created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS services(id TEXT PRIMARY KEY, business_id TEXT, category TEXT, name TEXT, description TEXT, price REAL, duration INTEGER, kind TEXT DEFAULT 'service', images TEXT DEFAULT '[]', active INTEGER DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS addons(id TEXT PRIMARY KEY, service_id TEXT, name TEXT, price REAL, duration INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS staff(id TEXT PRIMARY KEY, business_id TEXT, name TEXT, phone TEXT, email TEXT, title TEXT, image TEXT, login_code TEXT UNIQUE, onboarded INTEGER DEFAULT 0, schedule TEXT DEFAULT '{}', breaks TEXT DEFAULT '[]', active INTEGER DEFAULT 1);
+CREATE TABLE IF NOT EXISTS portfolio(id TEXT PRIMARY KEY, staff_id TEXT, url TEXT, approved INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS bookings(id TEXT PRIMARY KEY, client_id TEXT, business_id TEXT, staff_id TEXT, service_id TEXT, addons TEXT DEFAULT '[]', appointment_type TEXT DEFAULT 'in_shop', date TEXT, start_time TEXT, end_time TEXT, price REAL, status TEXT DEFAULT 'pending', notes TEXT, started_at TEXT, completed_at TEXT, client_approved INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX IF NOT EXISTS ix_b_biz ON bookings(business_id,date); CREATE INDEX IF NOT EXISTS ix_b_cli ON bookings(client_id); CREATE INDEX IF NOT EXISTS ix_b_staff ON bookings(staff_id,date);
+CREATE TABLE IF NOT EXISTS reviews(id TEXT PRIMARY KEY, service_id TEXT, booking_id TEXT UNIQUE, client_id TEXT, staff_id TEXT, rating INTEGER, comment TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS wishlist(client_id TEXT, service_id TEXT, PRIMARY KEY(client_id,service_id));
+CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY, sender_id TEXT, recipient_id TEXT, body TEXT, media_url TEXT, is_read INTEGER DEFAULT 0, created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY, user_id TEXT, type TEXT, title TEXT, body TEXT, is_read INTEGER DEFAULT 0, delivery TEXT DEFAULT 'in_app', created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS payments(id TEXT PRIMARY KEY, kind TEXT, booking_id TEXT, payer_id TEXT, business_id TEXT, amount REAL, method TEXT, reference TEXT, proof_url TEXT, status TEXT DEFAULT 'pending', created_at TEXT DEFAULT CURRENT_TIMESTAMP, verified_at TEXT);
+CREATE TABLE IF NOT EXISTS payouts(business_id TEXT PRIMARY KEY, bank_name TEXT, account_number TEXT, account_name TEXT);
+INSERT OR IGNORE INTO categories(id,name) VALUES('c1','Hair'),('c2','Nails'),('c3','Makeup'),('c4','Spa & Massage'),('c5','Barbering'),('c6','Skincare');
