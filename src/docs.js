@@ -41,7 +41,7 @@ textarea{min-height:130px;resize:vertical}
 pre{margin:8px 0 0;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:10px;overflow:auto;max-height:340px;white-space:pre-wrap;word-break:break-word}
 .status{font-weight:700;margin-top:12px}.ok{color:var(--post)}.err{color:var(--delete)}
 .tabs{display:flex;gap:6px;margin-top:14px}
-.hide{display:none}
+.hide{display:none}details{margin:8px 0}summary{cursor:pointer;font-weight:700}.intro code{background:var(--bg);padding:1px 5px;border-radius:4px}
 @media(max-width:800px){.wrap{grid-template-columns:1fr}nav{display:none}}
 </style></head><body>
 <header>
@@ -56,6 +56,35 @@ pre{margin:8px 0 0;background:var(--bg);border:1px solid var(--line);border-radi
       <p>1. Open <b>auth / register</b> or <b>login</b> and press Send. The token is saved here and used on every route after that.</p>
       <p>2. Open any route, fill the fields, press Send. Each route also shows a ready-to-copy fetch snippet for your frontend.</p>
       <p>3. Routes marked with a role (client, business, staff, admin) need a token from that kind of account. Staff tokens come from <b>auth / staff-login</b>.</p>
+    </div>
+    <div class="intro" id="gpanel">
+      <strong>Continue with Google: how to implement and test</strong>
+      <p>The frontend signs in with Google through Firebase, then sends the Firebase ID token to <b>POST /api/auth/google</b>. The API verifies it, creates the account if needed, and returns the normal Trend token.</p>
+      <details><summary>Implementation guide</summary>
+        <p><b>Setup (once).</b> Firebase console: Authentication, Sign-in method, turn on Google. Authentication, Settings, Authorized domains: add this site's domain. Put your Firebase project ID in <code>FIREBASE_PROJECT_ID</code> in wrangler.toml.</p>
+        <p><b>Web build:</b></p>
+        <pre>import { getAuth, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+const cred = await signInWithPopup(getAuth(), new GoogleAuthProvider());
+const idToken = await cred.user.getIdToken();</pre>
+        <p><b>Android and iOS (Expo):</b> use @react-native-google-signin/google-signin, then exchange its token with Firebase:</p>
+        <pre>const { data } = await GoogleSignin.signIn();
+const cred = GoogleAuthProvider.credential(data.idToken);
+const user = (await signInWithCredential(getAuth(), cred)).user;
+const idToken = await user.getIdToken();</pre>
+        <p><b>Then call the API (both platforms):</b></p>
+        <pre>const res = await fetch(API_URL + '/api/auth/google', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ id_token: idToken, role: 'client' })  // 'business' for business sign-up
+});
+const { token, user, created } = await res.json();
+// save token, then send it on every request: Authorization: Bearer token</pre>
+        <p>Response: <code>200</code> for an existing account, <code>201</code> for a new one (<code>created: true</code>, so you can send new users to onboarding). Errors: <code>401</code> invalid token or unverified Google email.</p>
+      </details>
+      <label>Test it here: paste your Firebase web config (Project settings, Your apps)</label>
+      <textarea id="gcfg" style="min-height:90px" spellcheck="false" placeholder='{"apiKey":"...","authDomain":"your-app.firebaseapp.com","projectId":"your-app"}'></textarea>
+      <div class="row" style="margin-top:10px"><select id="grole" aria-label="Role for new accounts" style="background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px"><option>client</option><option>business</option></select><button id="gbtn">Continue with Google</button></div>
+      <div class="status" id="gstat"></div>
     </div>
     <div id="routes"></div>
   </main>
@@ -112,8 +141,24 @@ function card(r){
     })}).catch(function(e){st.className='status err';st.textContent='Network error: '+e.message});
   };
   head.onclick=function(){var o=c.classList.toggle('open');head.setAttribute('aria-expanded',o)};
-  c.appendChild(head);c.appendChild(body);c._r=r;return c;
+  c.appendChild(head);c.appendChild(body);c._r=r;c._ta=ta;c._send=send;return c;
 }
+var gcfg=document.getElementById('gcfg'),gstat=document.getElementById('gstat');
+gcfg.value=localStorage.getItem('trend_fb')||'';
+function loadScript(src){return new Promise(function(ok,no){var s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=function(){no(new Error('Could not load '+src))};document.head.appendChild(s)})}
+document.getElementById('gbtn').onclick=function(){
+  var cfg;try{cfg=JSON.parse(gcfg.value)}catch(e){gstat.className='status err';gstat.textContent='Firebase config must be valid JSON';return}
+  localStorage.setItem('trend_fb',gcfg.value);gstat.className='status';gstat.textContent='Opening Google...';
+  var V='https://www.gstatic.com/firebasejs/10.12.2/';
+  loadScript(V+'firebase-app-compat.js').then(function(){return loadScript(V+'firebase-auth-compat.js')}).then(function(){
+    if(!firebase.apps.length)firebase.initializeApp(cfg);
+    return firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  }).then(function(r){return r.user.getIdToken()}).then(function(t){
+    var c=window.__gcard;c._ta.value=pretty({id_token:t,role:document.getElementById('grole').value});
+    c.classList.add('open');gstat.textContent='Got a Firebase token. Sending to /api/auth/google...';
+    c._send.click();c.scrollIntoView({block:'center'});
+  }).catch(function(e){gstat.className='status err';gstat.textContent=e.message+' (check the config and that this domain is in Firebase Authorized domains)'});
+};
 fetch('/api/_routes').then(function(x){return x.json()}).then(function(rs){
   var groups={},order=[];
   rs.forEach(function(r){var g=r.path.split('/')[2]||'root';if(!groups[g]){groups[g]=[];order.push(g)}groups[g].push(r)});
@@ -123,6 +168,7 @@ fetch('/api/_routes').then(function(x){return x.json()}).then(function(rs){
     nav.appendChild(h('a',{href:'#g-'+g},[h('span',{text:g}),h('span',{text:groups[g].length})]));
     groups[g].forEach(function(r){var c=card(r);root.appendChild(c);cards.push({c:c,r:r,hd:hd})});
   });
+  cards.forEach(function(x){if(x.r.path==='/api/auth/google')window.__gcard=x.c});
   document.getElementById('search').addEventListener('input',function(e){
     var v=e.target.value.toLowerCase();
     cards.forEach(function(x){x.c.classList.toggle('hide',v&&(x.r.path+' '+x.r.summary+' '+x.r.method).toLowerCase().indexOf(v)<0)});
