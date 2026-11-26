@@ -40,6 +40,18 @@ async function verifyFirebase(env, token) {
   if (!pid || d.aud !== pid || d.iss !== "https://securetoken.google.com/" + pid || d.exp < Date.now() / 1000 || !d.sub) bad("Invalid Google token", 401);
   return d;
 }
+async function cldSign(env, params) {
+  const str = Object.keys(params).sort().map((k) => k + "=" + params[k]).join("&") + env.CLOUDINARY_API_SECRET;
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-1", enc.encode(str)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+const cldReady = (env) => (env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET) || bad("Cloudinary is not configured on the server", 500);
+async function cldDelete(env, url) {
+  const m = /\/(image|video|raw)\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-z0-9]+)?$/i.exec(url || "");
+  if (!m || !cldReady(env)) return;
+  const ts = Math.floor(Date.now() / 1000), public_id = decodeURIComponent(m[2]);
+  const fd = new FormData(); fd.append("public_id", public_id); fd.append("timestamp", ts); fd.append("api_key", env.CLOUDINARY_API_KEY); fd.append("signature", await cldSign(env, { public_id, timestamp: ts }));
+  await fetch("https://api.cloudinary.com/v1_1/" + env.CLOUDINARY_CLOUD_NAME + "/" + m[1] + "/destroy", { method: "POST", body: fd });
+}
 async function hashPw(pw, salt) {
   const k = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveBits"]);
   return b64u(await crypto.subtle.deriveBits({ name: "PBKDF2", salt: enc.encode(salt), iterations: 100000, hash: "SHA-256" }, k, 256));
@@ -184,11 +196,14 @@ r("POST", "/api/auth/staff-login", "-", "Staff log in with the code their busine
 });
 r("GET", "/api/auth/me", "any", "Get the signed-in user", null, async (c) => (c.user.role === "staff" ? await c.one("SELECT id,name,phone,email,title,image,onboarded,business_id FROM staff WHERE id=?", c.user.sub) : await c.one("SELECT id,role,name,email,phone,image,verified,settings FROM users WHERE id=?", c.user.sub)));
 r("PUT", "/api/profile", "client,business", "Update name, email, phone, image URL or notification settings", { name: "Ada O.", settings: { sms: true, email: false } }, async (c) => { await patch(c, "users", c.user.sub, c.body, ["name", "email", "phone", "image", "settings"]); return { updated: true }; });
-r("POST", "/api/uploads", "any", "Upload an image or media file (multipart field: file). Returns its URL.", null, async (c) => {
-  const f = (await c.req.formData()).get("file"); if (!f || !f.size) bad("Attach a file in the 'file' field");
-  if (f.size > 8e6) bad("File too large (8 MB max)", 413);
-  const key = uid() + "-" + f.name.replace(/[^\w.-]/g, "_"); await c.env.UPLOADS.put(key, f.stream(), { httpMetadata: { contentType: f.type } });
-  return [{ url: "/files/" + key }, 201];
+r("POST", "/api/uploads", "any", "Upload an image or media file (multipart field: file) to Cloudinary. Returns its URL.", null, async (c) => {
+  cldReady(c.env); const f = (await c.req.formData()).get("file"); if (!f || !f.size) bad("Attach a file in the 'file' field");
+  if (f.size > 10e6) bad("File too large (10 MB max)", 413);
+  const ts = Math.floor(Date.now() / 1000), folder = "trend", fd = new FormData();
+  fd.append("file", f); fd.append("api_key", c.env.CLOUDINARY_API_KEY); fd.append("timestamp", ts); fd.append("folder", folder); fd.append("signature", await cldSign(c.env, { folder, timestamp: ts }));
+  const res = await fetch("https://api.cloudinary.com/v1_1/" + c.env.CLOUDINARY_CLOUD_NAME + "/auto/upload", { method: "POST", body: fd }), d = await res.json();
+  if (!res.ok) bad("Upload failed: " + (d.error?.message || res.status), 502);
+  return [{ url: d.secure_url, public_id: d.public_id, type: d.resource_type }, 201];
 }, { file: true });
 
 // 2. Client platform
@@ -267,8 +282,8 @@ const ownSvc = async (c) => (await c.one("SELECT * FROM services WHERE id=? AND 
 r("PUT", "/api/business/services/:id", "business", "Update a service", { price: 16000, active: 1 }, async (c) => { await ownSvc(c); await patch(c, "services", c.params.id, c.body, ["name", "category", "description", "price", "duration", "kind", "images", "active"]); return { updated: true }; });
 r("DELETE", "/api/business/services/:id", "business", "Delete a service", null, async (c) => { await ownSvc(c); await c.run("DELETE FROM addons WHERE service_id=?", c.params.id); await c.run("DELETE FROM services WHERE id=?", c.params.id); return { deleted: true }; });
 r("POST", "/api/business/services/:id/addons", "business", "Add an add-on to a service", { name: "Scalp massage", price: 2000, duration: 10 }, async (c) => { await ownSvc(c); need(c.body, "name", "price"); const id = uid(); await c.run("INSERT INTO addons VALUES(?,?,?,?,?)", id, c.params.id, c.body.name, c.body.price, c.body.duration || 0); return [{ id }, 201]; });
-r("DELETE", "/api/business/services/:id/images", "business", "Remove one image URL from a service", { url: "/files/abc.jpg" }, async (c) => { const s = await ownSvc(c); const imgs = pj(s.images, []).filter((u) => u !== c.body.url); await c.run("UPDATE services SET images=? WHERE id=?", JSON.stringify(imgs), s.id); await c.env.UPLOADS.delete((c.body.url || "").replace("/files/", "")); return { images: imgs }; });
-r("POST", "/api/business/services/:id/images", "business", "Attach an uploaded image URL to a service", { url: "/files/abc.jpg" }, async (c) => { const s = await ownSvc(c); need(c.body, "url"); const imgs = [...pj(s.images, []), c.body.url]; await c.run("UPDATE services SET images=? WHERE id=?", JSON.stringify(imgs), s.id); return { images: imgs }; });
+r("DELETE", "/api/business/services/:id/images", "business", "Remove one image URL from a service", { url: "https://res.cloudinary.com/demo/image/upload/abc.jpg" }, async (c) => { const s = await ownSvc(c); const imgs = pj(s.images, []).filter((u) => u !== c.body.url); await c.run("UPDATE services SET images=? WHERE id=?", JSON.stringify(imgs), s.id); c.ctx.waitUntil(cldDelete(c.env, c.body.url)); return { images: imgs }; });
+r("POST", "/api/business/services/:id/images", "business", "Attach an uploaded image URL to a service", { url: "https://res.cloudinary.com/demo/image/upload/abc.jpg" }, async (c) => { const s = await ownSvc(c); need(c.body, "url"); const imgs = [...pj(s.images, []), c.body.url]; await c.run("UPDATE services SET images=? WHERE id=?", JSON.stringify(imgs), s.id); return { images: imgs }; });
 
 // Staff management
 const ownStaff = async (c) => (await c.one("SELECT * FROM staff WHERE id=? AND business_id=?", c.params.id, (await biz(c)).id)) || bad("Staff not found", 404);
@@ -294,10 +309,10 @@ r("POST", "/api/bookings/:id/complete", "business,staff", "Mark the appointment 
 r("POST", "/api/bookings/:id/approve", "client", "Client confirms the service was completed", null, async (c) => { const b = await loadBooking(c, c.params.id); if (b.status !== "completed") bad("Booking is not completed", 409); await c.run("UPDATE bookings SET client_approved=1 WHERE id=?", b.id); return { approved: true }; });
 
 // 5. Staff platform
-r("PUT", "/api/staff/onboarding", "staff", "Complete staff onboarding", { name: "Chika", title: "Stylist", image: "/files/me.jpg" }, async (c) => { await patch(c, "staff", c.user.sub, { ...c.body, onboarded: 1 }, ["name", "title", "image", "onboarded"]); return { onboarded: true }; });
+r("PUT", "/api/staff/onboarding", "staff", "Complete staff onboarding", { name: "Chika", title: "Stylist", image: "https://res.cloudinary.com/demo/image/upload/me.jpg" }, async (c) => { await patch(c, "staff", c.user.sub, { ...c.body, onboarded: 1 }, ["name", "title", "image", "onboarded"]); return { onboarded: true }; });
 r("GET", "/api/staff/me", "staff", "My profile with business info", null, async (c) => ({ staff: await c.one("SELECT id,name,title,image,phone,schedule,breaks FROM staff WHERE id=?", c.user.sub), business: await biz(c) }));
 r("PUT", "/api/staff/availability", "staff", "Update my availability, schedule and breaks", { schedule: DAY, breaks: [["13:00", "14:00"]] }, async (c) => { await patch(c, "staff", c.user.sub, c.body, ["schedule", "breaks"]); return { updated: true }; });
-r("POST", "/api/staff/portfolio", "staff", "Add an uploaded image to my portfolio (needs business approval)", { url: "/files/work1.jpg" }, async (c) => { need(c.body, "url"); const id = uid(); await c.run("INSERT INTO portfolio(id,staff_id,url) VALUES(?,?,?)", id, c.user.sub, c.body.url); return [{ id, approved: false }, 201]; });
+r("POST", "/api/staff/portfolio", "staff", "Add an uploaded image to my portfolio (needs business approval)", { url: "https://res.cloudinary.com/demo/image/upload/work1.jpg" }, async (c) => { need(c.body, "url"); const id = uid(); await c.run("INSERT INTO portfolio(id,staff_id,url) VALUES(?,?,?)", id, c.user.sub, c.body.url); return [{ id, approved: false }, 201]; });
 r("GET", "/api/staff/portfolio", "staff", "My portfolio", null, (c) => c.all("SELECT * FROM portfolio WHERE staff_id=?", c.user.sub));
 r("GET", "/api/staff/stats", "staff", "My statistics and client reviews. Query: from, to", null, async (c) => ({ ...(await statsFor(c, "staff_id=?", [c.user.sub])), reviews: await c.all("SELECT rating,comment,created_at FROM reviews WHERE staff_id=? ORDER BY created_at DESC LIMIT 50", c.user.sub) }));
 
@@ -311,12 +326,12 @@ r("PUT", "/api/settings/notifications", "client,business", "Set SMS and email no
 
 // 7. Payments (manual)
 r("GET", "/api/payments/bank-details", "-", "Trend's bank account details for manual transfers", null, (c) => pj(c.env.BANK_DETAILS, {}));
-r("POST", "/api/payments", "client", "Client submits a payment confirmation for a booking", { booking_id: "BOOKING_ID", amount: 15000, method: "transfer", reference: "TRF123", proof_url: "/files/receipt.jpg" }, async (c) => {
+r("POST", "/api/payments", "client", "Client submits a payment confirmation for a booking", { booking_id: "BOOKING_ID", amount: 15000, method: "transfer", reference: "TRF123", proof_url: "https://res.cloudinary.com/demo/image/upload/receipt.jpg" }, async (c) => {
   need(c.body, "booking_id", "amount"); const b = await loadBooking(c, c.body.booking_id), id = uid();
   await c.run("INSERT INTO payments(id,kind,booking_id,payer_id,business_id,amount,method,reference,proof_url) VALUES(?,?,?,?,?,?,?,?,?)", id, "client_payment", b.id, c.user.sub, b.business_id, c.body.amount, c.body.method || "transfer", c.body.reference || "", c.body.proof_url || null); return [{ id, status: "pending" }, 201];
 });
 r("POST", "/api/payments/cash", "business,staff", "Record a cash payment for a booking", { booking_id: "BOOKING_ID", amount: 15000 }, async (c) => { need(c.body, "booking_id", "amount"); const b = await loadBooking(c, c.body.booking_id), id = uid(); await c.run("INSERT INTO payments(id,kind,booking_id,payer_id,business_id,amount,method,status) VALUES(?,?,?,?,?,?,?,?)", id, "client_payment", b.id, b.client_id, b.business_id, c.body.amount, "cash", "confirmed"); return [{ id, status: "confirmed" }, 201]; });
-r("POST", "/api/payments/business-report", "business", "Business reports a payment made to Trend", { amount: 5000, reference: "TRF999", proof_url: "/files/proof.jpg" }, async (c) => { need(c.body, "amount"); const id = uid(); await c.run("INSERT INTO payments(id,kind,payer_id,business_id,amount,method,reference,proof_url) VALUES(?,?,?,?,?,?,?,?)", id, "business_remittance", c.user.sub, (await biz(c)).id, c.body.amount, "transfer", c.body.reference || "", c.body.proof_url || null); return [{ id, status: "pending" }, 201]; });
+r("POST", "/api/payments/business-report", "business", "Business reports a payment made to Trend", { amount: 5000, reference: "TRF999", proof_url: "https://res.cloudinary.com/demo/image/upload/proof.jpg" }, async (c) => { need(c.body, "amount"); const id = uid(); await c.run("INSERT INTO payments(id,kind,payer_id,business_id,amount,method,reference,proof_url) VALUES(?,?,?,?,?,?,?,?)", id, "business_remittance", c.user.sub, (await biz(c)).id, c.body.amount, "transfer", c.body.reference || "", c.body.proof_url || null); return [{ id, status: "pending" }, 201]; });
 r("GET", "/api/payments", "client,business,admin", "List payments. Query: status (pending, confirmed, incomplete, unsuccessful)", null, async (c) => {
   const u = c.user, st = c.q.get("status"); const w = u.role === "admin" ? "1=1" : u.role === "client" ? "payer_id=?" : "business_id=?"; const a = u.role === "admin" ? [] : [u.role === "client" ? u.sub : (await biz(c)).id];
   return c.all("SELECT * FROM payments WHERE " + w + (st ? " AND status=?" : "") + " ORDER BY created_at DESC LIMIT 200", ...a, ...(st ? [st] : []));
@@ -349,7 +364,6 @@ export default {
     const url = new URL(req.url), p = url.pathname;
     if (p === "/" || p === "/docs") return new Response(DOCS_HTML, { headers: { "content-type": "text/html;charset=utf-8" } });
     if (p === "/api/_routes") return J(routes.map(({ method, path, auth, summary, example, file }) => ({ method, path, auth, summary, example, file: !!file })));
-    if (p.startsWith("/files/")) { const o = await env.UPLOADS.get(decodeURIComponent(p.slice(7))); return o ? new Response(o.body, { headers: { "content-type": o.httpMetadata?.contentType || "application/octet-stream", ...CORS } }) : J({ error: "Not found" }, 404); }
     try {
       for (const x of routes) {
         if (x.method !== req.method) continue; const m = p.match(x.re); if (!m) continue;
