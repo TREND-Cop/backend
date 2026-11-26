@@ -15,7 +15,7 @@ COMMISSION_PCT = "10"
 TERMII_SENDER_ID = "Trend"
 BREVO_SENDER = "no-reply@trend.org.ng"
 BANK_DETAILS = '{"bank_name":"Your Bank","account_number":"0000000000","account_name":"Trend Ltd"}'
-FIREBASE_PROJECT_ID = "your-firebase-project-id"
+FIREBASE_PROJECT_ID = "trend-c0a80"
 CLOUDINARY_CLOUD_NAME = "ekzfyvi0"
 CLOUDINARY_API_KEY = "265991349975294"
 
