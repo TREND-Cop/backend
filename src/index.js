@@ -377,7 +377,7 @@ export default {
           if (!can(x.auth, c.user.role)) bad("This route is for: " + x.auth, 403);
         }
         if (["POST", "PUT", "DELETE"].includes(req.method) && !x.file && (req.headers.get("content-type") || "").includes("json")) c.body = await req.json().catch(() => bad("Body must be valid JSON"));
-        const out = await x.handler(c); const [data, status] = Array.isArray(out) ? out : [out, 200];
+        const out = await x.handler(c); const [data, status] = Array.isArray(out) && typeof out[1] === "number" ? out : [out, 200];
         return J(data, status);
       }
       return J({ error: "Route not found: " + req.method + " " + p }, 404);
